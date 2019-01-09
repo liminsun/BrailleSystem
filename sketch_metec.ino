@@ -20,7 +20,7 @@ boolean stringComplete = false;  // whether the string is complete
 int StimType = 1; // 0 -- transient ; 1 -- steady state ; 2 -- vibrotactile
 int Pinup = 10;
 int Jitter =100;
-int VibroCycles = 10;
+int VibroCycles = 20;
 int ISI = 1200;
 int Trials = 200;
 int CountTick = 0;
@@ -35,7 +35,9 @@ int PinupTick[5] = {10,10,10,10,10};
 boolean StartCountPinUpTick[5] = {false,false,false,false,false};
 int CycleCount [5] = {0,0,0,0,0};
 boolean stopping[5] = {false,false,false,false,false};
-      
+int VibroTactile_Trials[5] = {200,200,200,200,200};      
+int CountTick_V[5] = {0,0,0,0,0};
+int tmpISI_V[5] = {1200,1200,1200,1200,1200}; 
  
 // braille cell control
 boolean Work = false;
@@ -63,34 +65,28 @@ void setup() {
   pinMode(STROBE,OUTPUT);
   pinMode(DATA,  OUTPUT);
   
+  //establishContact();  // send a byte to establish contact until receiver responds
    MsTimer2::set(1, flash); 
    MsTimer2::start();
 
+//   Work = true;
 }
 
-void loop() {
-  // print the string when a newline arrives:
-  readCommand(); // read command from serial port
-  procCommand();
-  
-  // process
-  if (Work){
-    if (Active[0]||Active[1]||Active[2]||Active[3]||Active[4]){
-      for (int i=0; i<5; i++) {
-        if (CycleCount[i] > Trials || Active[i]==false) {
-          stopping[i] = true;
-        }
-        else{
-          stopping[i] = false;        
-        }
-      }
-      
-      if ((stopping[0] && stopping[1] && stopping[2] && stopping[3] && stopping[4])|| (nTri > Trials)){
-        Work = false;
-        Serial.println("Stop\n");
-      }    
-    }
+void Send()
+{
+  for (int i=sizeof(p16)-1;i>=0;i--)
+  {
+    if(bitRead(p16[i],6) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
+    if(bitRead(p16[i],2) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
+    if(bitRead(p16[i],1) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
+    if(bitRead(p16[i],0) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
+    if(bitRead(p16[i],7) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
+    if(bitRead(p16[i],5) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
+    if(bitRead(p16[i],4) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
+    if(bitRead(p16[i],3) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);    
   }
+  digitalWrite(STROBE,1);
+  digitalWrite(STROBE,0);
 }
 
 void flash() { 
@@ -125,7 +121,6 @@ void flash() {
       if(CountTick >= tmpISI){
           CountTick = 0;
       }
-       
     }
     
     if (StimType == 1) {
@@ -180,11 +175,79 @@ void flash() {
           }                 
         }
         Send();  
-    }         
+    } 
+    if (StimType == 2) {
+     // vibrotactile
+       for(int i=0; i<5;i++){
+          if (Active[i]){//for each cell
+             if (CountTick_V[i] == 0){  //start point of one vibratactile
+                CountTick_V[i] ++;
+                tmpISI_V[i] = ISI + random(-Jitter,Jitter);
+                CycleCount[i] ++;
+                tickCount[i] = 0;
+              }
+              else{//steady state in one vibratactile
+                if (CountTick_V[i] < VibroCycles*interval[i] )
+                {
+                  tickCount[i] ++;
+                  if (tickCount[i] == interval[i]){
+                    tickCount[i] = 0;
+                    p16[i] = p16stat[i];
+                    StartCountPinUpTick[i] = true;
+              
+                    if (i==0){digitalWrite(TRIGGER1, HIGH); }
+                    if (i==1){digitalWrite(TRIGGER2, HIGH); }
+                    if (i==2){digitalWrite(TRIGGER3, HIGH); }
+                    if (i==3){digitalWrite(TRIGGER4, HIGH); }
+                    if (i==4){digitalWrite(TRIGGER5, HIGH); }              
+                  }
+                  if (StartCountPinUpTick[i]){
+                    PinupTick[i] --;
+                    if(PinupTick[i] <= 0){
+                      p16[i] = 0;
+                      PinupTick[i] = Pinup;
+                      StartCountPinUpTick[i] = false;       
+                    if (i==0){digitalWrite(TRIGGER1, LOW);}
+                    if (i==1){digitalWrite(TRIGGER2, LOW);}
+                    if (i==2){digitalWrite(TRIGGER3, LOW);}
+                    if (i==3){digitalWrite(TRIGGER4, LOW);}
+                    if (i==4){digitalWrite(TRIGGER5, LOW);}              
+                                         
+                    }
+                  } 
+                }
+                CountTick_V[i] ++; 
+                
+              }
+              
+              if(CountTick_V[i] >= tmpISI_V[i]+VibroCycles*interval[i]){ // stop one vibratactile
+                CountTick_V[i] = 0;
+              }
+            
+          }//active
+       }// for loop: all cells
+       Send();
+    }// if stim type
+  }//if work
+} //end of function    
+
+void ParseSetupPara(){
+  if (inputString[2]=='0') StimType = 0;
+  else if (inputString[2]=='1')StimType = 1;
+  else if (inputString[2]=='2')StimType = 2;
+  
+  if (inputString[3] == 'P') {
+    Pinup = inputString.substring(4,7).toInt();        
   }
-}     
-
-
+  if (inputString[7] == 'J') {
+    Jitter = inputString.substring(8,12).toInt();  
+  }
+  if (inputString[12] == 'V') {
+    VibroCycles = inputString.substring(13,17).toInt();
+  }
+  
+}
+      
 void procCommand(){
   if (stringComplete) {
     Serial.println(inputString+"\n");
@@ -228,6 +291,9 @@ void procCommand(){
     }
     else if (inChar == 'N'){
       Trials = inputString.substring(1,5).toInt();
+       for (int i=0;i<5; i++){
+           VibroTactile_Trials[i] = Trials;
+       }
     }
     else if (inChar == 'F'){
       if (inputString[1] == '1'){
@@ -374,39 +440,8 @@ void procCommand(){
 
 }
 
-void ParseSetupPara(){
-  if (inputString[2]=='0') StimType = 0;
-  else if (inputString[2]=='1')StimType = 1;
-  else if (inputString[2]=='2')StimType = 2;
-  
-  if (inputString[3] == 'P') {
-    Pinup = inputString.substring(4,7).toInt();        
-  }
-  if (inputString[7] == 'J') {
-    Jitter = inputString.substring(8,12).toInt();  
-  }
-  if (inputString[12] == 'V') {
-    VibroCycles = inputString.substring(13,17).toInt();
-  }
-  
-}
-      
-void Send()
-{
-  for (int i=sizeof(p16)-1;i>=0;i--)
-  {
-    if(bitRead(p16[i],6) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
-    if(bitRead(p16[i],2) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
-    if(bitRead(p16[i],1) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
-    if(bitRead(p16[i],0) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
-    if(bitRead(p16[i],7) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
-    if(bitRead(p16[i],5) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
-    if(bitRead(p16[i],4) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);
-    if(bitRead(p16[i],3) ){digitalWrite(DATA,1);} else {digitalWrite(DATA,0);}  digitalWrite(CLOCK,1);digitalWrite(CLOCK,0);    
-  }
-  digitalWrite(STROBE,1);
-  digitalWrite(STROBE,0);
-}
+
+
 
 void readCommand()
 {
@@ -437,6 +472,30 @@ void parseCellCfg(String scell) {
       if(scell[10] == '1') p16stat[indx] += 32; 
       if(scell[11] == '1') p16stat[indx] += 64; 
       if(scell[12] == '1') p16stat[indx] += 128; 
+    }
+  }
+}
+void loop() {
+  // print the string when a newline arrives:
+  readCommand(); // read command from serial port
+  procCommand();
+  
+  // process
+  if (Work){
+    if (Active[0]||Active[1]||Active[2]||Active[3]||Active[4]){
+      for (int i=0; i<5; i++) {
+        if (CycleCount[i] > Trials || Active[i]==false) {
+          stopping[i] = true;
+        }
+        else{
+          stopping[i] = false;        
+        }
+      }
+      
+      if ((stopping[0] && stopping[1] && stopping[2] && stopping[3] && stopping[4])|| (nTri > Trials)){
+        Work = false;
+        Serial.println("Stop\n");
+      }    
     }
   }
 }
